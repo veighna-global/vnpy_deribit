@@ -1,5 +1,5 @@
 import pytz
-from typing import Callable
+from typing import Callable, Dict, Any
 
 from vnpy.trader.object import (
     TickData,
@@ -24,66 +24,83 @@ from vnpy.trader.constant import (
 )
 from vnpy.trader.gateway import BaseGateway
 from vnpy.api.websocket import WebsocketClient
+from vnpy.event.engine import EventEngine
 
 from datetime import datetime
+from pytz import timezone
 from copy import copy
 
+# UTC时区
+UTC_TZ: timezone = pytz.utc
 
-WEBSOCKET_HOST = "wss://www.deribit.com/ws/api/v2"
-WEBSOCKET_TESTNET_HOST = "wss://test.deribit.com/ws/api/v2"
+# 实盘和模拟盘Websocket API地址
+WEBSOCKET_HOST: str = "wss://www.deribit.com/ws/api/v2"
+WEBSOCKET_TESTNET_HOST: str = "wss://test.deribit.com/ws/api/v2"
 
-PRODUCT_DERIBIT2VT = {
-    "future": Product.FUTURES,
-    "option": Product.OPTION
-}
-OPTIONTYPE_DERIBIT2VT = {
-    "call": OptionType.CALL,
-    "put": OptionType.PUT
-}
-DIRECTION_VT2DERIBIT = {Direction.LONG: "buy", Direction.SHORT: "sell"}
-ORDERTYPE_VT2DERIBIT = {
-    OrderType.LIMIT: "limit",
-    OrderType.MARKET: "market",
-    OrderType.STOP: "stop_market"
-}
-ORDERTYPE_DERIBIT2VT = {v: k for k, v in ORDERTYPE_VT2DERIBIT.items()}
-DIRECTION_DERIBIT2VT = {v: k for k, v in DIRECTION_VT2DERIBIT.items()}
-STATUS_DERIBIT2VT = {
+# 委托状态映射
+STATUS_DERIBIT2VT: Dict[str, Status] = {
     "open": Status.NOTTRADED,
     "filled": Status.ALLTRADED,
     "rejected": Status.REJECTED,
     "cancelled": Status.CANCELLED,
 }
 
-UTC_TZ = pytz.utc
+# 委托类型映射
+ORDERTYPE_VT2DERIBIT: Dict[OrderType, str] = {
+    OrderType.LIMIT: "limit",
+    OrderType.MARKET: "market",
+    OrderType.STOP: "stop_market"
+}
+ORDERTYPE_DERIBIT2VT: Dict[str, OrderType] = {v: k for k, v in ORDERTYPE_VT2DERIBIT.items()}
+
+# 买卖方向映射
+DIRECTION_VT2DERIBIT: Dict[Direction, str] = {
+    Direction.LONG: "buy",
+    Direction.SHORT: "sell"
+}
+DIRECTION_DERIBIT2VT: Dict[str, Direction] = {v: k for k, v in DIRECTION_VT2DERIBIT.items()}
+
+# 产品类型映射
+PRODUCT_DERIBIT2VT: Dict[str, Product] = {
+    "future": Product.FUTURES,
+    "option": Product.OPTION
+}
+
+# 期权类型映射
+OPTIONTYPE_DERIBIT2VT: Dict[str, OptionType] = {
+    "call": OptionType.CALL,
+    "put": OptionType.PUT
+}
 
 
 class DeribitGateway(BaseGateway):
-    """"""
+    """
+    vn.py用于对接DERIBIT账户的交易接口。
+    """
 
     default_setting = {
         "key": "",
         "secret": "",
-        "proxy_host": "",
-        "proxy_port": "",
-        "server": ["REAL", "TESTNET"]
+        "代理地址": "",
+        "代理端口": "",
+        "服务器": ["REAL", "TESTNET"]
     }
 
     exchanges = [Exchange.DERIBIT]
 
-    def __init__(self, event_engine):
-        """"""
-        super().__init__(event_engine, "DERIBIT")
+    def __init__(self, event_engine: EventEngine, gateway_name: str = "DERIBIT") -> None:
+        """构造函数"""
+        super().__init__(event_engine, gateway_name)
 
-        self.ws_api = DeribitWebsocketApi(self)
+        self.ws_api: "DeribitWebsocketApi" = DeribitWebsocketApi(self)
 
-    def connect(self, setting: dict):
-        """"""
-        key = setting["key"]
-        secret = setting["secret"]
-        proxy_host = setting["proxy_host"]
-        proxy_port = setting["proxy_port"]
-        server = setting["server"]
+    def connect(self, setting: dict) -> None:
+        """连接交易接口"""
+        key: str = setting["key"]
+        secret: str = setting["secret"]
+        proxy_host: str = setting["proxy_host"]
+        proxy_port: str = setting["proxy_port"]
+        server: str = setting["server"]
 
         if proxy_port.isdigit():
             proxy_port = int(proxy_port)
@@ -98,71 +115,67 @@ class DeribitGateway(BaseGateway):
             server
         )
 
-    def subscribe(self, req: SubscribeRequest):
-        """"""
+    def subscribe(self, req: SubscribeRequest) -> None:
+        """订阅行情"""
         self.ws_api.subscribe(req)
 
-    def send_order(self, req: OrderRequest):
-        """"""
+    def send_order(self, req: OrderRequest) -> str:
+        """委托下单"""
         return self.ws_api.send_order(req)
 
-    def cancel_order(self, req: CancelRequest):
-        """"""
+    def cancel_order(self, req: CancelRequest) -> None:
+        """委托撤单"""
         return self.ws_api.cancel_order(req)
 
-    def query_account(self):
-        """"""
+    def query_account(self) -> None:
+        """查询资金"""
         self.ws_api.query_account()
 
-    def query_position(self):
-        """
-        Query holding positions.
-        """
+    def query_position(self) -> None:
+        """查询持仓"""
         pass
 
-    def query_history(self, req: HistoryRequest):
-        """
-        Query bar history data.
-        """
+    def query_history(self, req: HistoryRequest) -> None:
+        """查询历史数据"""
         pass
 
-    def close(self):
-        """"""
+    def close(self) -> None:
+        """关闭连接"""
         self.ws_api.stop()
 
 
 class DeribitWebsocketApi(WebsocketClient):
     """"""
 
-    def __init__(self, gateway: BaseGateway):
-        """"""
+    def __init__(self, gateway: DeribitGateway) -> None:
+        """构造函数"""
         super().__init__()
 
-        self.gateway = gateway
-        self.gateway_name = gateway.gateway_name
+        self.gateway: DeribitGateway = gateway
+        self.gateway_name: str = gateway.gateway_name
 
-        self.key = ""
-        self.secret = ""
-        self.access_token = ""
+        self.key: str = ""
+        self.secret: str = ""
+        self.access_token: str = ""
 
-        self.reqid = 1
-        self.reqid_callback_map = {}
-        self.reqid_currency_map = {}
-        self.reqid_order_map = {}
+        self.reqid: int = 1
+        self.reqid_callback_map: Dict[str, callable] = {}
+        self.reqid_currency_map: Dict[str, str] = {}
+        self.reqid_order_map: Dict[int, OrderData] = {}
 
-        self.connect_time = 0
-        self.order_count = 1000000
-        self.local_sys_map = {}
-        self.sys_local_map = {}
-        self.cancel_requests = {}
+        self.connect_time: int = 0
+        self.order_count: int = 1000000
+        self.local_sys_map: Dict[str, Any] = {}
+        self.sys_local_map: Dict[Any, Any] = {}
+        self.cancel_requests: Dict[str, CancelRequest] = {}
 
-        self.callbacks = {
+        self.callbacks: Dict[str, callable] = {
             "ticker": self.on_ticker,
             "book": self.on_orderbook,
             "user": self.on_user_update,
         }
 
-        self.ticks = {}
+        self.ticks: Dict[str, TickData] = {}
 
     def connect(
         self,
@@ -171,8 +184,8 @@ class DeribitWebsocketApi(WebsocketClient):
         proxy_host: str,
         proxy_port: int,
         server: str
-    ):
-        """"""
+    ) -> None:
+        """连接Websocket"""
         self.key = key
         self.secret = secret
 
@@ -187,8 +200,8 @@ class DeribitWebsocketApi(WebsocketClient):
 
         self.start()
 
-    def subscribe(self, req: SubscribeRequest):
-        """"""
+    def subscribe(self, req: SubscribeRequest) -> None:
+        """订阅行情"""
         symbol = req.symbol
 
         self.ticks[symbol] = TickData(
@@ -209,8 +222,8 @@ class DeribitWebsocketApi(WebsocketClient):
 
         self.send_request("private/subscribe", params)
 
-    def send_order(self, req: OrderRequest):
-        """"""
+    def send_order(self, req: OrderRequest) -> str:
+        """委托下单"""
         self.order_count += 1
         orderid = str(self.connect_time + self.order_count)
 
@@ -240,8 +253,8 @@ class DeribitWebsocketApi(WebsocketClient):
 
         return order.vt_orderid
 
-    def cancel_order(self, req: CancelRequest):
-        """"""
+    def cancel_order(self, req: CancelRequest) -> None:
+        """委托撤单"""
         if req.orderid not in self.local_sys_map:
             self.cancel_requests[req.orderid] = req
             return
@@ -259,10 +272,8 @@ class DeribitWebsocketApi(WebsocketClient):
             self.on_cancel_order
         )
 
-    def get_access_token(self):
-        """
-        use the access key and secret to get access token
-        """
+    def get_access_token(self) -> None:
+        """获取访问令牌"""
         params = {
             "grant_type": "client_credentials",
             "client_id": self.key,
@@ -275,8 +286,8 @@ class DeribitWebsocketApi(WebsocketClient):
             self.on_access_token
         )
 
-    def query_instrument(self):
-        """"""
+    def query_instrument(self) -> None:
+        """查询合约信息"""
         for currency in ["BTC", "ETH"]:
             params = {
                 "currency": currency,
@@ -289,8 +300,8 @@ class DeribitWebsocketApi(WebsocketClient):
                 self.on_query_instrument
             )
 
-    def query_account(self):
-        """"""
+    def query_account(self) -> None:
+        """查询资金"""
         for currency in ["BTC", "ETH"]:
             params = {
                 "currency": currency,
@@ -303,8 +314,8 @@ class DeribitWebsocketApi(WebsocketClient):
                 self.on_query_account
             )
 
-    def query_position(self):
-        """"""
+    def query_position(self) -> None:
+        """查询持仓"""
         for currency in ["BTC", "ETH"]:
             params = {
                 "currency": currency,
@@ -317,8 +328,8 @@ class DeribitWebsocketApi(WebsocketClient):
                 self.on_query_position
             )
 
-    def query_order(self):
-        """"""
+    def query_order(self) -> None:
+        """查询未成交委托"""
         for currency in ["BTC", "ETH"]:
             params = {
                 "currency": currency,
@@ -331,25 +342,19 @@ class DeribitWebsocketApi(WebsocketClient):
                 self.on_query_order
             )
 
-    def on_connected(self):
-        """
-        Callback when websocket is connected successfully.
-        """
+    def on_connected(self) -> None:
+        """连接成功回报"""
         self.gateway.write_log("服务器连接成功")
 
         self.get_access_token()
         self.query_instrument()
 
-    def on_disconnected(self):
-        """
-        Callback when websocket connection is lost.
-        """
+    def on_disconnected(self) -> None:
+        """连接断开回报"""
         self.gateway.write_log("服务器连接断开")
 
-    def on_packet(self, packet: dict):
-        """
-        callback when data is received and unpacked
-        """
+    def on_packet(self, packet: dict) -> None:
+        """推送数据回报"""
         if "id" in packet:
             packet_id = packet["id"]
 
@@ -364,8 +369,8 @@ class DeribitWebsocketApi(WebsocketClient):
             callback = self.callbacks[kind]
             callback(packet)
 
-    def on_access_token(self, packet: dict):
-        """"""
+    def on_access_token(self, packet: dict) -> None:
+        """登录请求回报"""
         data = packet["result"]
         self.access_token = data["access_token"]
 
@@ -386,8 +391,8 @@ class DeribitWebsocketApi(WebsocketClient):
 
         self.send_request("private/subscribe", params)
 
-    def on_query_instrument(self, packet: dict):
-        """"""
+    def on_query_instrument(self, packet: dict) -> None:
+        """合约查询回报"""
         currency = self.reqid_currency_map[packet["id"]]
 
         for d in packet["result"]:
@@ -424,8 +429,8 @@ class DeribitWebsocketApi(WebsocketClient):
 
         self.gateway.write_log(f"{currency}合约信息查询成功")
 
-    def on_query_position(self, packet: dict):
-        """"""
+    def on_query_position(self, packet: dict) -> None:
+        """持仓查询回报"""
         data = packet["result"]
         currency = self.reqid_currency_map[packet["id"]]
 
@@ -442,8 +447,8 @@ class DeribitWebsocketApi(WebsocketClient):
 
         self.gateway.write_log(f"{currency}持仓查询成功")
 
-    def on_query_account(self, packet: dict):
-        """"""
+    def on_query_account(self, packet: dict) -> None:
+        """资金查询回报"""
         data = packet["result"]
         currency = data["currency"]
 
@@ -457,8 +462,8 @@ class DeribitWebsocketApi(WebsocketClient):
 
         self.gateway.write_log(f"{currency}资金查询成功")
 
-    def on_query_order(self, packet: dict):
-        """"""
+    def on_query_order(self, packet: dict) -> None:
+        """未成交委托查询回报"""
         data = packet["result"]
         currency = self.reqid_currency_map[packet["id"]]
 
@@ -467,8 +472,8 @@ class DeribitWebsocketApi(WebsocketClient):
 
         self.gateway.write_log(f"{currency}委托查询成功")
 
-    def on_send_order(self, packet: dict):
-        """"""
+    def on_send_order(self, packet: dict) -> None:
+        """委托下单回报"""
         error = packet.get("error", None)
         if not error:
             return
@@ -485,8 +490,8 @@ class DeribitWebsocketApi(WebsocketClient):
         order.status = Status.REJECTED
         self.gateway.on_order(order)
 
-    def on_cancel_order(self, packet: dict):
-        """"""
+    def on_cancel_order(self, packet: dict) -> None:
+        """委托撤单回报"""
         data = packet["result"]
         orderid = data["label"]
 
@@ -506,8 +511,8 @@ class DeribitWebsocketApi(WebsocketClient):
 
         self.gateway.on_order(copy(order))
 
-    def on_user_update(self, packet: dict):
-        """"""
+    def on_user_update(self, packet: dict) -> None:
+        """用户更新推送"""
         if "portfolio" in packet["params"]["channel"]:
             self.on_account(packet)
             return
@@ -530,8 +535,8 @@ class DeribitWebsocketApi(WebsocketClient):
             for position in positions:
                 self.on_position(position)
 
-    def on_order(self, data: dict):
-        """"""
+    def on_order(self, data: dict) -> None:
+        """委托更新推送"""
         if data["order_type"] not in ORDERTYPE_DERIBIT2VT:
             self.gateway.write_log(f"收到不支持的类型委托推送{data}")
             return
@@ -573,8 +578,8 @@ class DeribitWebsocketApi(WebsocketClient):
             if order.is_active():
                 self.cancel_order(req)
 
-    def on_trade(self, data: list, orderid):
-        """"""
+    def on_trade(self, data: list, orderid) -> None:
+        """成交更新推送"""
         sys_id = data["order_id"]
         local_id = self.sys_local_map[sys_id]
 
@@ -592,8 +597,8 @@ class DeribitWebsocketApi(WebsocketClient):
 
         self.gateway.on_trade(trade)
 
-    def on_position(self, data: dict):
-        """"""
+    def on_position(self, data: dict) -> None:
+        """持仓更新推送"""
         pos = PositionData(
             symbol=data["instrument_name"],
             exchange=Exchange.DERIBIT,
@@ -606,8 +611,8 @@ class DeribitWebsocketApi(WebsocketClient):
 
         self.gateway.on_position(pos)
 
-    def on_account(self, packet: dict):
-        """"""
+    def on_account(self, packet: dict) -> None:
+        """资金更新推送"""
         data = packet["params"]["data"]
 
         account = AccountData(
@@ -618,8 +623,8 @@ class DeribitWebsocketApi(WebsocketClient):
         )
         self.gateway.on_account(account)
 
-    def on_ticker(self, packet: dict):
-        """"""
+    def on_ticker(self, packet: dict) -> None:
+        """行情推送回报"""
         data = packet["params"]["data"]
 
         symbol = data["instrument_name"]
@@ -647,8 +652,8 @@ class DeribitWebsocketApi(WebsocketClient):
 
         self.gateway.on_tick(copy(tick))
 
-    def on_orderbook(self, packet: dict):
-        """"""
+    def on_orderbook(self, packet: dict) -> None:
+        """盘口推送回报"""
         data = packet["params"]["data"]
 
         symbol = data["instrument_name"]
@@ -675,8 +680,8 @@ class DeribitWebsocketApi(WebsocketClient):
         method: str,
         params: dict,
         callback: Callable = None
-    ):
-        """"""
+    ) -> int:
+        """发送请求"""
         self.reqid += 1
 
         msg = {
@@ -698,13 +703,14 @@ class DeribitWebsocketApi(WebsocketClient):
 
 
 def generate_datetime(timestamp: float) -> datetime:
-    """"""
+    """生成时间戳"""
     dt = datetime.fromtimestamp(timestamp / 1000)
     dt = UTC_TZ.localize(dt)
     return dt
 
+
 def get_float_value(data: dict, key: str) -> float:
-    """"""
+    """获取字典中对应键的浮点数值"""
     data_str = data.get(key, "")
     if not data_str:
         return 0.0
