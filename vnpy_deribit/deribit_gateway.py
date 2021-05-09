@@ -31,8 +31,8 @@ from vnpy_websocket import WebsocketClient
 
 
 # 实盘和模拟盘Websocket API地址
-WEBSOCKET_HOST: str = "wss://www.deribit.com/ws/api/v2"
-WEBSOCKET_TESTNET_HOST: str = "wss://test.deribit.com/ws/api/v2"
+REAL_WEBSOCKET_HOST: str = "wss://www.deribit.com/ws/api/v2"
+TEST_WEBSOCKET_HOST: str = "wss://test.deribit.com/ws/api/v2"
 
 # 委托状态映射
 STATUS_DERIBIT2VT: Dict[str, Status] = {
@@ -80,7 +80,7 @@ class DeribitGateway(BaseGateway):
         "secret": "",
         "代理地址": "",
         "代理端口": "",
-        "服务器": ["REAL", "TESTNET"]
+        "服务器": ["REAL", "TEST"]
     }
 
     exchanges = [Exchange.DERIBIT]
@@ -182,7 +182,7 @@ class DeribitWebsocketApi(WebsocketClient):
         proxy_port: int,
         server: str
     ) -> None:
-        """连接Websocket"""
+        """连接服务器"""
         self.key = key
         self.secret = secret
 
@@ -191,9 +191,9 @@ class DeribitWebsocketApi(WebsocketClient):
         )
 
         if server == "REAL":
-            self.init(WEBSOCKET_HOST, proxy_host, proxy_port)
+            self.init(REAL_WEBSOCKET_HOST, proxy_host, proxy_port)
         else:
-            self.init(WEBSOCKET_TESTNET_HOST, proxy_host, proxy_port)
+            self.init(TEST_WEBSOCKET_HOST, proxy_host, proxy_port)
 
         self.start()
 
@@ -249,9 +249,6 @@ class DeribitWebsocketApi(WebsocketClient):
             "label": orderid,
             "price": req.price
         }
-
-        if req.offset == Offset.CLOSE:
-            params["reduce_only"] = True
 
         reqid: str = self.send_request(
             method,
@@ -320,6 +317,11 @@ class DeribitWebsocketApi(WebsocketClient):
                 params,
                 self.on_query_account
             )
+
+    def subscribe_topic(self) -> None:
+        """订阅委托和成交回报"""
+        params: dict = {"channels": ["user.changes.any.any.raw"]}
+        self.send_request("private/subscribe", params)
 
     def query_position(self) -> None:
         """查询持仓"""
@@ -527,21 +529,14 @@ class DeribitWebsocketApi(WebsocketClient):
         """用户更新推送"""
         data: dict = packet["params"]["data"]
 
-        trades: list = data["trades"]
-        positions: list = data["positions"]
-        orders: list = data["orders"]
+        for order in data["orders"]:
+            self.on_order(order)
 
-        if orders:
-            for order in orders:
-                self.on_order(order)
+        for trade in data["trades"]:
+            self.on_trade(trade)
 
-        if trades:
-            for trade in trades:
-                self.on_trade(trade, orders[0]["order_id"])
-
-        if positions:
-            for position in positions:
-                self.on_position(position)
+        for position in data["positions"]:
+            self.on_position(position)
 
     def on_order(self, data: dict) -> None:
         """委托更新推送"""
@@ -588,7 +583,7 @@ class DeribitWebsocketApi(WebsocketClient):
 
         self.query_account()
 
-    def on_trade(self, data: list, orderid) -> None:
+    def on_trade(self, data: dict) -> None:
         """成交更新推送"""
         sys_id: str = data["order_id"]
         local_id: str = self.sys_local_map[sys_id]
@@ -638,29 +633,13 @@ class DeribitWebsocketApi(WebsocketClient):
         data: dict = packet["params"]["data"]
 
         symbol: str = data["instrument_name"]
-        tick: TickData = self.ticks.get(symbol, None)
-
-        # if not tick or tick.bid_price_1 == 0 or tick.ask_price_1 == 0:
-        if not tick:
-            return
-
+        tick: TickData = self.ticks[symbol]
+        
         tick.last_price = data["last_price"]
         tick.high_price = data["stats"]["high"]
         tick.low_price = data["stats"]["low"]
         tick.volume = data["stats"]["volume"]
         tick.datetime = generate_datetime(data["timestamp"])
-
-        if tick.last_price is None:
-            tick.last_price = (tick.bid_price_1 + tick.ask_price_1) / 2
-
-        if tick.volume is None:
-            tick.volume = 0
-
-        if tick.high_price is None:
-            tick.high_price = 0
-
-        if tick.low_price is None:
-            tick.low_price = 0
 
         self.gateway.on_tick(copy(tick))
 
