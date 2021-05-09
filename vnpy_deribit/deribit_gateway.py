@@ -1,8 +1,9 @@
 from datetime import datetime
-from pytz import utc as UTC_TZ
 from copy import copy
 import pytz
 from typing import Callable, Dict, Any
+from pytz import timezone
+from tzlocal import get_localzone
 
 from vnpy.trader.object import (
     TickData,
@@ -28,6 +29,10 @@ from vnpy.trader.constant import (
 from vnpy.trader.gateway import BaseGateway
 from vnpy.event.engine import EventEngine
 from vnpy_websocket import WebsocketClient
+
+
+# 本地时区
+LOCAL_TZ: timezone = get_localzone()
 
 
 # 实盘和模拟盘Websocket API地址
@@ -187,7 +192,7 @@ class DeribitWebsocketApi(WebsocketClient):
         self.secret = secret
 
         self.connect_time = (
-            int(datetime.now(UTC_TZ).strftime("%y%m%d%H%M%S")) * self.order_count
+            int(datetime.now().strftime("%y%m%d%H%M%S")) * self.order_count
         )
 
         if server == "REAL":
@@ -209,7 +214,7 @@ class DeribitWebsocketApi(WebsocketClient):
             gateway_name=self.gateway_name,
             symbol=symbol,
             exchange=Exchange.DERIBIT,
-            datetime=datetime.now(UTC_TZ),
+            datetime=datetime.now(LOCAL_TZ),
         )
         self.ticks[symbol] = tick
 
@@ -639,6 +644,7 @@ class DeribitWebsocketApi(WebsocketClient):
         tick.high_price = data["stats"]["high"]
         tick.low_price = data["stats"]["low"]
         tick.volume = data["stats"]["volume"]
+        tick.open_interest = data["open_interest"]
         tick.datetime = generate_datetime(data["timestamp"])
 
         self.gateway.on_tick(copy(tick))
@@ -663,6 +669,8 @@ class DeribitWebsocketApi(WebsocketClient):
             ap, av = asks[i]
             setattr(tick, f"ask_price_{ix}", ap)
             setattr(tick, f"ask_volume_{ix}", av)
+
+        tick.datetime = generate_datetime(data["timestamp"])
 
         self.gateway.on_tick(copy(tick))
 
@@ -696,4 +704,4 @@ class DeribitWebsocketApi(WebsocketClient):
 def generate_datetime(timestamp: int) -> datetime:
     """生成时间戳"""
     dt: datetime = datetime.fromtimestamp(timestamp / 1000)
-    return UTC_TZ.localize(dt)
+    return LOCAL_TZ.localize(dt)
