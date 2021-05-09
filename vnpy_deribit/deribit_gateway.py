@@ -1,3 +1,6 @@
+from datetime import datetime
+from pytz import utc as UTC_TZ
+from copy import copy
 import pytz
 from typing import Callable, Dict, Any
 
@@ -23,15 +26,9 @@ from vnpy.trader.constant import (
     OptionType
 )
 from vnpy.trader.gateway import BaseGateway
-from vnpy.api.websocket import WebsocketClient
 from vnpy.event.engine import EventEngine
+from vnpy_websocket import WebsocketClient
 
-from datetime import datetime
-from pytz import timezone
-from copy import copy
-
-# UTC时区
-UTC_TZ: timezone = pytz.utc
 
 # 实盘和模拟盘Websocket API地址
 WEBSOCKET_HOST: str = "wss://www.deribit.com/ws/api/v2"
@@ -506,7 +503,7 @@ class DeribitWebsocketApi(WebsocketClient):
             msg: str = error["message"]
             self.gateway.write_log(f"撤单失败，信息：{msg}")
             return
-            
+
         data: dict = packet["result"]
         orderid: str = data["label"]
 
@@ -642,8 +639,9 @@ class DeribitWebsocketApi(WebsocketClient):
 
         symbol: str = data["instrument_name"]
         tick: TickData = self.ticks.get(symbol, None)
-        if not tick:
+
         # if not tick or tick.bid_price_1 == 0 or tick.ask_price_1 == 0:
+        if not tick:
             return
 
         tick.last_price = data["last_price"]
@@ -663,7 +661,7 @@ class DeribitWebsocketApi(WebsocketClient):
 
         if tick.low_price is None:
             tick.low_price = 0
-        
+
         self.gateway.on_tick(copy(tick))
 
     def on_orderbook(self, packet: dict) -> None:
@@ -720,4 +718,3 @@ def generate_datetime(timestamp: int) -> datetime:
     """生成时间戳"""
     dt: datetime = datetime.fromtimestamp(timestamp / 1000)
     return UTC_TZ.localize(dt)
-
