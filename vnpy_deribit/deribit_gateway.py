@@ -1,6 +1,5 @@
 from datetime import datetime
 from copy import copy
-import pytz
 from typing import Callable, Dict, Any
 from pytz import timezone
 
@@ -20,7 +19,6 @@ from vnpy.trader.object import (
 )
 from vnpy.trader.constant import (
     Direction,
-    Offset,
     Exchange,
     OrderType,
     Product,
@@ -609,7 +607,7 @@ class DeribitWebsocketApi(WebsocketClient):
 
         symbol: str = data["instrument_name"]
         tick: TickData = self.ticks[symbol]
-        
+
         tick.last_price = get_float(data["last_price"])
         tick.high_price = get_float(data["stats"]["high"])
         tick.low_price = get_float(data["stats"]["low"])
