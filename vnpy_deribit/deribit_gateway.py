@@ -177,7 +177,6 @@ class DeribitWebsocketApi(WebsocketClient):
         self.local_sys_map: Dict[str, str] = {}
         self.sys_local_map: Dict[str, str] = {}
 
-        self.subscribed: Dict[str, SubscribeRequest] = {}
         self.cancel_requests: Dict[str, CancelRequest] = {}
         self.ticks: Dict[str, TickData] = {}
 
@@ -214,8 +213,9 @@ class DeribitWebsocketApi(WebsocketClient):
         """订阅行情"""
         symbol: str = req.symbol
 
-        # 缓存订阅记录
-        self.subscribed[req.vt_symbol] = req
+        # 过滤重复的订阅
+        if symbol in self.ticks:
+            return
 
         # 创建TICK对象
         tick: TickData = TickData(
@@ -234,7 +234,7 @@ class DeribitWebsocketApi(WebsocketClient):
             ]
         }
 
-        self.send_request("private/subscribe", params)
+        self.send_request("public/subscribe", params)
 
     def send_order(self, req: OrderRequest) -> str:
         """委托下单"""
@@ -364,8 +364,13 @@ class DeribitWebsocketApi(WebsocketClient):
         self.query_instrument()
 
         # 重新订阅之前已订阅的行情
-        for req in list(self.subscribed.values()):
-            self.subscribe(req)
+        channels: list = []
+        for symbol in self.ticks.keys():
+            channels.append(f"ticker.{symbol}.100ms")
+            channels.append(f"book.{symbol}.none.10.100ms")
+
+        params: dict = {"channels": channels}
+        self.send_request("public/subscribe", params)
 
     def on_disconnected(self) -> None:
         """连接断开回报"""
