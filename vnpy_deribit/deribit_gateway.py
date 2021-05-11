@@ -1,7 +1,7 @@
 from datetime import datetime
 from copy import copy
 import pytz
-from typing import Callable, Dict, Any
+from typing import Callable, Dict, Set
 from pytz import timezone
 
 from tzlocal import get_localzone
@@ -173,11 +173,9 @@ class DeribitWebsocketApi(WebsocketClient):
 
         self.connect_time: int = 0
         self.order_count: int = 1000000
-        self.local_sys_map: Dict[str, str] = {}
-        self.sys_local_map: Dict[str, str] = {}
+        self.localids: Set[str] = set()
 
         self.subscribed: Dict[str, SubscribeRequest] = {}
-        self.cancel_requests: Dict[str, CancelRequest] = {}
         self.ticks: Dict[str, TickData] = {}
 
         self.callbacks: Dict[str, callable] = {
@@ -246,6 +244,8 @@ class DeribitWebsocketApi(WebsocketClient):
         # 生成本地委托号
         self.order_count += 1
         orderid: str = str(self.connect_time + self.order_count)
+        self.localids.add(orderid)
+
         side: str = DIRECTION_VT2DERIBIT[req.direction]
         method: str = "private/" + side
 
@@ -274,21 +274,20 @@ class DeribitWebsocketApi(WebsocketClient):
 
     def cancel_order(self, req: CancelRequest) -> None:
         """委托撤单"""
-        # 如果尚未收到委托回报，则缓存撤单请求
-        if req.orderid not in self.local_sys_map:
-            self.cancel_requests[req.orderid] = req
-            return
-
-        # 基于本地委托号获取系统委托号
-        sys_id: str = self.local_sys_map[req.orderid]
-
-        params: dict = {"order_id": sys_id}
-
-        self.send_request(
-            "private/cancel",
-            params,
-            self.on_cancel_order
-        )
+        # 如果委托号为本地委托号
+        if req.orderid in self.localids:
+            self.send_request(
+                "private/cancel_by_label",
+                {"label": req.orderid},
+                self.on_cancel_order
+            )
+        # 如果委托号为系统委托号
+        else:
+            self.send_request(
+                "private/cancel",
+                {"order_id": req.orderid},
+                self.on_cancel_order
+            )
 
     def get_access_token(self) -> None:
         """获取访问令牌"""
@@ -532,21 +531,18 @@ class DeribitWebsocketApi(WebsocketClient):
             return
 
         if data["label"]:
-            local_id: str = data["label"]
+            orderid: str = data["label"]
+            self.localids.add(orderid)
         else:
-            local_id: str = data["order_id"]
+            orderid: str = data["order_id"]
 
-        sys_id: str = data["order_id"]
-        self.local_sys_map[local_id] = sys_id
-        self.sys_local_map[sys_id] = local_id
-
-        price: Any = data.get("price", 0)
+        price: float = data.get("price", 0)
 
         order: OrderData = OrderData(
             symbol=data["instrument_name"],
             exchange=Exchange.DERIBIT,
             type=ORDERTYPE_DERIBIT2VT[data["order_type"]],
-            orderid=local_id,
+            orderid=orderid,
             direction=DIRECTION_DERIBIT2VT[data["direction"]],
             price=price,
             volume=data["amount"],

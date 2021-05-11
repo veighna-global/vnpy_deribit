@@ -22,5 +22,7 @@
 
 from .deribit_gateway import DeribitGateway
 
+import importlib_metadata
 
-__version__ = "2021.4.21"
+
+__version__ = importlib_metadata.version("vnpy_deribit")
