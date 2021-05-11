@@ -402,6 +402,7 @@ class DeribitWebsocketApi(WebsocketClient):
 
         self.gateway.write_log("服务器登录成功")
 
+        self.subscribe_topic()
         self.query_position()
         self.query_account()
         self.query_order()
