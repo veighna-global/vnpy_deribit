@@ -175,7 +175,6 @@ class DeribitWebsocketApi(WebsocketClient):
         self.order_count: int = 1000000
         self.localids: Set[str] = set()
 
-        self.subscribed: Dict[str, SubscribeRequest] = {}
         self.ticks: Dict[str, TickData] = {}
 
         self.callbacks: Dict[str, callable] = {
@@ -211,8 +210,9 @@ class DeribitWebsocketApi(WebsocketClient):
         """订阅行情"""
         symbol: str = req.symbol
 
-        # 缓存订阅记录
-        self.subscribed[req.vt_symbol] = req
+        # 过滤重复的订阅
+        if symbol in self.ticks:
+            return
 
         # 创建TICK对象
         tick: TickData = TickData(
@@ -227,12 +227,11 @@ class DeribitWebsocketApi(WebsocketClient):
         params: dict = {
             "channels": [
                 f"ticker.{symbol}.100ms",
-                f"book.{symbol}.none.10.100ms",
-                f"user.changes.{symbol}.raw"
+                f"book.{symbol}.none.10.100ms"
             ]
         }
 
-        self.send_request("private/subscribe", params)
+        self.send_request("public/subscribe", params)
 
     def send_order(self, req: OrderRequest) -> str:
         """委托下单"""
@@ -305,7 +304,7 @@ class DeribitWebsocketApi(WebsocketClient):
 
     def query_instrument(self) -> None:
         """查询合约信息"""
-        for currency in ["BTC", "ETH", "USDT"]:
+        for currency in ["BTC", "ETH"]:
             params: dict = {
                 "currency": currency,
                 "expired": False,
@@ -319,7 +318,7 @@ class DeribitWebsocketApi(WebsocketClient):
 
     def query_account(self) -> None:
         """查询资金"""
-        for currency in ["BTC", "ETH", "USDT"]:
+        for currency in ["BTC", "ETH"]:
             params: dict = {"currency": currency}
 
             self.send_request(
@@ -335,7 +334,7 @@ class DeribitWebsocketApi(WebsocketClient):
 
     def query_position(self) -> None:
         """查询持仓"""
-        for currency in ["BTC", "ETH", "USDT"]:
+        for currency in ["BTC", "ETH"]:
             params: dict = {"currency": currency}
 
             self.send_request(
@@ -346,7 +345,7 @@ class DeribitWebsocketApi(WebsocketClient):
 
     def query_order(self) -> None:
         """查询未成交委托"""
-        for currency in ["BTC", "ETH", "USDT"]:
+        for currency in ["BTC", "ETH"]:
             params: dict = {"currency": currency}
 
             self.send_request(
@@ -363,8 +362,13 @@ class DeribitWebsocketApi(WebsocketClient):
         self.query_instrument()
 
         # 重新订阅之前已订阅的行情
-        for req in list(self.subscribed.values()):
-            self.subscribe(req)
+        channels: list = []
+        for symbol in self.ticks.keys():
+            channels.append(f"ticker.{symbol}.100ms")
+            channels.append(f"book.{symbol}.none.10.100ms")
+
+        params: dict = {"channels": channels}
+        self.send_request("public/subscribe", params)
 
     def on_disconnected(self) -> None:
         """连接断开回报"""
@@ -554,13 +558,6 @@ class DeribitWebsocketApi(WebsocketClient):
 
         self.gateway.on_order(order)
 
-        # 检查该委托是否有等待中的撤单请求
-        if order.orderid in self.cancel_requests:
-            req: CancelRequest = self.cancel_requests.pop(order.orderid)
-
-            if order.is_active():
-                self.cancel_order(req)
-
     def on_trade(self, data: dict) -> None:
         """成交更新推送"""
         sys_id: str = data["order_id"]
@@ -601,12 +598,13 @@ class DeribitWebsocketApi(WebsocketClient):
         symbol: str = data["instrument_name"]
         tick: TickData = self.ticks[symbol]
         
-        tick.last_price = data["last_price"]
-        tick.high_price = data["stats"]["high"]
-        tick.low_price = data["stats"]["low"]
-        tick.volume = data["stats"]["volume"]
-        tick.open_interest = data["open_interest"]
+        tick.last_price = get_float(data["last_price"])
+        tick.high_price = get_float(data["stats"]["high"])
+        tick.low_price = get_float(data["stats"]["low"])
+        tick.volume = get_float(data["stats"]["volume"])
+        tick.open_interest = get_float(data["open_interest"])
         tick.datetime = generate_datetime(data["timestamp"])
+        tick.localtime = datetime.now()
 
         self.gateway.on_tick(copy(tick))
 
@@ -632,6 +630,7 @@ class DeribitWebsocketApi(WebsocketClient):
             setattr(tick, f"ask_volume_{ix}", av)
 
         tick.datetime = generate_datetime(data["timestamp"])
+        tick.localtime = datetime.now()
 
         self.gateway.on_tick(copy(tick))
 
@@ -666,3 +665,10 @@ def generate_datetime(timestamp: int) -> datetime:
     """生成时间戳"""
     dt: datetime = datetime.fromtimestamp(timestamp / 1000)
     return LOCAL_TZ.localize(dt)
+
+
+def get_float(value: any) -> float:
+    """获取浮点数"""
+    if isinstance(value, float):
+        return value
+    return 0
