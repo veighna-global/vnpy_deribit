@@ -288,6 +288,14 @@ class DeribitWebsocketApi(WebsocketClient):
                 self.on_cancel_order
             )
 
+    def set_heartbeat(self) -> None:
+        """设置心跳周期"""
+        self.send_request("public/set_heartbeat", {"interval": 10})
+
+    def test_request(self) -> None:
+        """测试联通性的请求"""
+        self.send_request("/public/test", {})
+
     def get_access_token(self) -> None:
         """获取访问令牌"""
         params: dict = {
@@ -385,11 +393,21 @@ class DeribitWebsocketApi(WebsocketClient):
                 callback(packet)
         # 订阅推送
         elif "params" in packet:
-            channel: str = packet["params"]["channel"]
-            kind: str = channel.split(".")[0]
+            params: dict = packet["params"]
 
-            callback: callable = self.callbacks[kind]
-            callback(packet)
+            # 真实数据推送
+            if "channel" in params:
+                channel: str = params["channel"]
+                kind: str = channel.split(".")[0]
+                callback: callable = self.callbacks[kind]
+                callback(packet)
+            # 连接心跳推送
+            elif "type" in params:
+                type_: str = params["type"]
+
+                # 响应心跳回复
+                if type_ == "test_request":
+                     self.test_request()
 
     def on_access_token(self, packet: dict) -> None:
         """登录请求回报"""
@@ -402,6 +420,7 @@ class DeribitWebsocketApi(WebsocketClient):
 
         self.gateway.write_log("服务器登录成功")
 
+        self.set_heartbeat()
         self.subscribe_topic()
         self.query_position()
         self.query_account()
