@@ -218,6 +218,7 @@ class DeribitWebsocketApi(WebsocketClient):
         tick: TickData = TickData(
             gateway_name=self.gateway_name,
             symbol=symbol,
+            name=symbol,
             exchange=Exchange.DERIBIT,
             datetime=datetime.now(LOCAL_TZ),
         )
