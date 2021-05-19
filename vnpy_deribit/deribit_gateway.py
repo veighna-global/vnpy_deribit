@@ -1,6 +1,5 @@
 from datetime import datetime
 from copy import copy
-import pytz
 from typing import Callable, Dict, Set
 from pytz import timezone
 
@@ -20,7 +19,6 @@ from vnpy.trader.object import (
 )
 from vnpy.trader.constant import (
     Direction,
-    Offset,
     Exchange,
     OrderType,
     Product,
@@ -408,7 +406,13 @@ class DeribitWebsocketApi(WebsocketClient):
 
                 # 响应心跳回复
                 if type_ == "test_request":
-                     self.test_request()
+                    self.test_request()
+
+    def on_error(self, exception_type: type, exception_value: Exception, tb):
+        """触发异常回调"""
+        msg: str = self.exception_detail(exception_type, exception_value, tb)
+        self.gateway.write_log(f"触发异常：{msg}")
+        print(msg)
 
     def on_access_token(self, packet: dict) -> None:
         """登录请求回报"""
@@ -618,7 +622,7 @@ class DeribitWebsocketApi(WebsocketClient):
 
         symbol: str = data["instrument_name"]
         tick: TickData = self.ticks[symbol]
-        
+
         tick.last_price = get_float(data["last_price"])
         tick.high_price = get_float(data["stats"]["high"])
         tick.low_price = get_float(data["stats"]["low"])
