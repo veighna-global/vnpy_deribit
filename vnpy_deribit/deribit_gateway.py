@@ -651,7 +651,7 @@ class DeribitWebsocketApi(WebsocketClient):
         tick.open_interest = get_float(data["open_interest"])
         tick.datetime = generate_datetime(data["timestamp"])
         tick.localtime = datetime.now()
-        
+
         if tick.last_price:
             self.gateway.on_tick(copy(tick))
 
