@@ -477,6 +477,13 @@ class DeribitWebsocketApi(WebsocketClient):
 
     def on_query_position(self, packet: dict) -> None:
         """持仓查询回报"""
+        error: dict = packet.get("error", None)
+        if error:
+            msg: str = error["message"]
+            code: int = error["code"]
+            self.gateway.write_log(f"持仓查询失败，状态码：{code}, 信息：{msg}")
+            return
+
         data: list = packet["result"]
         currency: str = self.reqid_currency_map[packet["id"]]
 
@@ -495,6 +502,13 @@ class DeribitWebsocketApi(WebsocketClient):
 
     def on_query_account(self, packet: dict) -> None:
         """资金查询回报"""
+        error: dict = packet.get("error", None)
+        if error:
+            code: int = error["code"]
+            msg: str = error["message"]
+            self.gateway.write_log(f"资金查询失败，状态码：{code}, 信息：{msg}")
+            return
+
         data: dict = packet["result"]
         currency: str = data["currency"]
 
@@ -508,6 +522,13 @@ class DeribitWebsocketApi(WebsocketClient):
 
     def on_query_order(self, packet: dict) -> None:
         """未成交委托查询回报"""
+        error: dict = packet.get("error", None)
+        if error:
+            msg: str = error["message"]
+            code: int = error["code"]
+            self.gateway.write_log(f"未成交委托查询失败，状态码：{code}, 信息：{msg}")
+            return
+
         data: list = packet["result"]
         currency: str = self.reqid_currency_map[packet["id"]]
 
@@ -630,8 +651,9 @@ class DeribitWebsocketApi(WebsocketClient):
         tick.open_interest = get_float(data["open_interest"])
         tick.datetime = generate_datetime(data["timestamp"])
         tick.localtime = datetime.now()
-
-        self.gateway.on_tick(copy(tick))
+        
+        if tick.last_price:
+            self.gateway.on_tick(copy(tick))
 
     def on_orderbook(self, packet: dict) -> None:
         """盘口推送回报"""
