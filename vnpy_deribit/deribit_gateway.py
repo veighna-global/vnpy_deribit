@@ -325,7 +325,7 @@ class DeribitWebsocketApi(WebsocketClient):
 
     def query_account(self) -> None:
         """查询资金"""
-        for currency in ["BTC", "ETH"]:
+        for currency in ["BTC", "ETH", "USDC"]:
             params: dict = {"currency": currency}
 
             self.send_request(
