@@ -607,7 +607,8 @@ class DeribitWebsocketApi(WebsocketClient):
     def on_trade(self, data: dict) -> None:
         """成交更新推送"""
         sys_id: str = data["order_id"]
-        local_id: str = self.sys_local_map[sys_id]
+        #local_id: str = self.sys_local_map[sys_id]
+        local_id: str = self.sys_id
 
         trade: TradeData = TradeData(
             symbol=data["instrument_name"],
