@@ -500,7 +500,7 @@ class DeribitWebsocketApi(WebsocketClient):
                 exchange=Exchange.DERIBIT,
                 direction=Direction.NET,
                 volume=pos["size"],
-                pnl=pos["floating_profit_loss"],
+                pnl=pos["total_profit_loss"],
                 gateway_name=self.gateway_name,
             )
             self.gateway.on_position(position)
@@ -659,6 +659,15 @@ class DeribitWebsocketApi(WebsocketClient):
         tick.open_interest = get_float(data["open_interest"])
         tick.datetime = generate_datetime(data["timestamp"])
         tick.localtime = datetime.now()
+
+        if 'mark_iv' in data:
+            tick.implied_volatility = get_float(data["mark_iv"])
+            tick.und_price = get_float(data["underlying_price"])
+            tick.option_price = get_float(data["mark_price"])
+            tick.delta  = get_float(data["greeks"]["delta"])
+            tick.gamma  = get_float(data["greeks"]["gamma"])
+            tick.vega   = get_float(data["greeks"]["vega"])
+            tick.theta  = get_float(data["greeks"]["theta"])
 
         if tick.last_price:
             self.gateway.on_tick(copy(tick))
