@@ -2,6 +2,7 @@ from datetime import datetime
 from copy import copy
 from typing import Callable, Dict, Set
 from pytz import timezone
+import json
 
 from tzlocal import get_localzone
 
@@ -64,7 +65,10 @@ DIRECTION_DERIBIT2VT: Dict[str, Direction] = {v: k for k, v in DIRECTION_VT2DERI
 # 产品类型映射
 PRODUCT_DERIBIT2VT: Dict[str, Product] = {
     "future": Product.FUTURES,
-    "option": Product.OPTION
+    "future_combo": Product.FUTURES,
+    "option": Product.OPTION,
+    "strike": Product.OPTION,
+    "option_combo": Product.OPTION
 }
 
 # 期权类型映射
@@ -124,6 +128,7 @@ class DeribitGateway(BaseGateway):
 
     def send_order(self, req: OrderRequest) -> str:
         """委托下单"""
+        print(req)
         return self.ws_api.send_order(req)
 
     def cancel_order(self, req: CancelRequest) -> None:
@@ -325,7 +330,7 @@ class DeribitWebsocketApi(WebsocketClient):
 
     def query_account(self) -> None:
         """查询资金"""
-        for currency in ["BTC", "ETH"]:
+        for currency in ["BTC", "ETH", "USDC"]:
             params: dict = {"currency": currency}
 
             self.send_request(
@@ -465,10 +470,12 @@ class DeribitWebsocketApi(WebsocketClient):
                 ])
 
                 contract.option_portfolio = d["base_currency"]
-                contract.option_strike = d["strike"]
-                contract.option_index = str(d["strike"])
+                if "strike" in d:
+                    contract.option_strike = d["strike"]
+                    contract.option_index = str(d["strike"])
                 contract.option_underlying = option_underlying
-                contract.option_type = OPTIONTYPE_DERIBIT2VT[d["option_type"]]
+                if "option_type" in d:
+                    contract.option_type = OPTIONTYPE_DERIBIT2VT[d["option_type"]]
                 contract.option_expiry = option_expiry
 
             self.gateway.on_contract(contract)
@@ -493,7 +500,7 @@ class DeribitWebsocketApi(WebsocketClient):
                 exchange=Exchange.DERIBIT,
                 direction=Direction.NET,
                 volume=pos["size"],
-                pnl=pos["floating_profit_loss"],
+                pnl=pos["total_profit_loss"],
                 gateway_name=self.gateway_name,
             )
             self.gateway.on_position(position)
@@ -607,7 +614,8 @@ class DeribitWebsocketApi(WebsocketClient):
     def on_trade(self, data: dict) -> None:
         """成交更新推送"""
         sys_id: str = data["order_id"]
-        local_id: str = self.sys_local_map[sys_id]
+        #local_id: str = self.sys_local_map[sys_id]
+        local_id: str = sys_id
 
         trade: TradeData = TradeData(
             symbol=data["instrument_name"],
@@ -651,6 +659,15 @@ class DeribitWebsocketApi(WebsocketClient):
         tick.open_interest = get_float(data["open_interest"])
         tick.datetime = generate_datetime(data["timestamp"])
         tick.localtime = datetime.now()
+
+        if 'mark_iv' in data:
+            tick.implied_volatility = get_float(data["mark_iv"])
+            tick.und_price = get_float(data["underlying_price"])
+            tick.option_price = get_float(data["mark_price"])
+            tick.delta  = get_float(data["greeks"]["delta"])
+            tick.gamma  = get_float(data["greeks"]["gamma"])
+            tick.vega   = get_float(data["greeks"]["vega"])
+            tick.theta  = get_float(data["greeks"]["theta"])
 
         if tick.last_price:
             self.gateway.on_tick(copy(tick))
