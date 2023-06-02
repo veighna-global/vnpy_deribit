@@ -2,7 +2,6 @@ from datetime import datetime
 from copy import copy
 from typing import Callable, Dict, Set
 from pytz import timezone
-import json
 
 from tzlocal import get_localzone
 
@@ -616,7 +615,6 @@ class DeribitWebsocketApi(WebsocketClient):
     def on_trade(self, data: dict) -> None:
         """成交更新推送"""
         sys_id: str = data["order_id"]
-        #local_id: str = self.sys_local_map[sys_id]
         local_id: str = sys_id
 
         trade: TradeData = TradeData(
@@ -663,13 +661,15 @@ class DeribitWebsocketApi(WebsocketClient):
         tick.localtime = datetime.now()
 
         if 'mark_iv' in data:
-            tick.implied_volatility = get_float(data["mark_iv"])
-            tick.und_price = get_float(data["underlying_price"])
-            tick.option_price = get_float(data["mark_price"])
-            tick.delta  = get_float(data["greeks"]["delta"])
-            tick.gamma  = get_float(data["greeks"]["gamma"])
-            tick.vega   = get_float(data["greeks"]["vega"])
-            tick.theta  = get_float(data["greeks"]["theta"])
+            tick.extra = {
+                "implied_volatility": get_float(data["mark_iv"]),
+                "und_price": get_float(data["underlying_price"]),
+                "option_price": get_float(data["mark_price"]),
+                "delta": get_float(data["greeks"]["delta"]),
+                "gamma": get_float(data["greeks"]["gamma"]),
+                "vega": get_float(data["greeks"]["vega"]),
+                "theta": get_float(data["greeks"]["theta"]),
+            }
 
         if tick.last_price:
             self.gateway.on_tick(copy(tick))
