@@ -64,6 +64,7 @@ DIRECTION_DERIBIT2VT: Dict[str, Direction] = {v: k for k, v in DIRECTION_VT2DERI
 
 # 产品类型映射
 PRODUCT_DERIBIT2VT: Dict[str, Product] = {
+    "spot": Product.SPOT,
     "future": Product.FUTURES,
     "future_combo": Product.FUTURES,
     "option": Product.OPTION,
@@ -82,6 +83,8 @@ class DeribitGateway(BaseGateway):
     """
     vn.py用于对接Deribit交易所的交易接口。
     """
+
+    default_name = "DERIBIT"
 
     default_setting = {
         "key": "",
@@ -128,7 +131,6 @@ class DeribitGateway(BaseGateway):
 
     def send_order(self, req: OrderRequest) -> str:
         """委托下单"""
-        print(req)
         return self.ws_api.send_order(req)
 
     def cancel_order(self, req: CancelRequest) -> None:
@@ -656,7 +658,7 @@ class DeribitWebsocketApi(WebsocketClient):
         tick.high_price = get_float(data["stats"]["high"])
         tick.low_price = get_float(data["stats"]["low"])
         tick.volume = get_float(data["stats"]["volume"])
-        tick.open_interest = get_float(data["open_interest"])
+        tick.open_interest = get_float(data.get("open_interest", 0))
         tick.datetime = generate_datetime(data["timestamp"])
         tick.localtime = datetime.now()
 
