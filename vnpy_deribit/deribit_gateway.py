@@ -1,10 +1,10 @@
 from datetime import datetime
 from copy import copy
 from typing import Callable, Dict, Set
-from pytz import timezone
 
 from tzlocal import get_localzone
 
+from vnpy.event import Event, EventEngine
 from vnpy.trader.object import (
     TickData,
     OrderData,
@@ -27,12 +27,12 @@ from vnpy.trader.constant import (
 )
 from vnpy.trader.event import EVENT_TIMER
 from vnpy.trader.gateway import BaseGateway
-from vnpy.event.engine import Event, EventEngine
+from vnpy.trader.utility import ZoneInfo
 from vnpy_websocket import WebsocketClient
 
 
 # 本地时区
-LOCAL_TZ: timezone = get_localzone()
+LOCAL_TZ: ZoneInfo = get_localzone()
 
 # 实盘和模拟盘Websocket API地址
 REAL_WEBSOCKET_HOST: str = "wss://www.deribit.com/ws/api/v2"
@@ -730,7 +730,7 @@ class DeribitWebsocketApi(WebsocketClient):
 def generate_datetime(timestamp: int) -> datetime:
     """生成时间戳"""
     dt: datetime = datetime.fromtimestamp(timestamp / 1000)
-    return LOCAL_TZ.localize(dt)
+    return dt.replace(tzinfo=LOCAL_TZ)
 
 
 def get_float(value: any) -> float:
